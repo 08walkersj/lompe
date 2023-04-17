@@ -152,6 +152,9 @@ class Emodel(object):
 
     def run_inversion(self, l1 = 0, l2 = 0,
                       data_density_weight = True, perimeter_width = 10,
+                      # gtg = False,
+                      Cpost = False,
+                      R = False,
                       **kwargs):
         """ Calculate model vector
 
@@ -172,6 +175,10 @@ class Emodel(object):
             when choosing the data to be included in the inversion. Default is 10,
             which means that a 10 cell wide perimeter around the model inner
             grid will be included. 
+        Cpost          : bool, optional
+                         Store posterior model covariance matrix as self.Cpost
+        R              : bool, optional
+                         Store resolution matrix as self.R
         """
 
         # initialize G matrices
@@ -230,7 +237,10 @@ class Emodel(object):
         if l1 > 0 or l2 > 0:
             gtg_mag = np.median(np.diagonal(GTG))
             ltl_mag = np.median(self.LTL.diagonal())
-            GG = GTG + l1*gtg_mag * np.eye(GTG.shape[0]) + l2 * gtg_mag / ltl_mag * self.LTL
+            Cpri_inv = l1*gtg_mag * np.eye(GTG.shape[0]) + l2 * gtg_mag / ltl_mag * self.LTL
+            GG = GTG + Cpri_inv
+            # LTL = l1*gtg_mag * np.eye(GTG.shape[0]) + l2 * gtg_mag / ltl_mag * self.LTL
+
         else:
             GG = GTG
 
@@ -238,7 +248,16 @@ class Emodel(object):
             kwargs['rcond'] = None
         self.m = np.linalg.lstsq(GG, GTd, **kwargs)[0]
 
-        return(GTG, GTd)
+        if Cpost or R:
+
+            Cpost = np.linalg.lstsq(GG,np.eye(GTG.shape[0]),**kwargs)[0]
+
+            if Cpost:
+                self.Cpost = Cpost
+
+            self.R = Cpost.dot(GTG)
+
+        return 1
 
 
     def add_data(self, *datasets):
