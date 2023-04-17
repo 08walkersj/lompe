@@ -126,6 +126,9 @@ class Emodel(object):
             self.L = De2 * f1[0].reshape((-1, 1)) + Dn2 * f1[1].reshape((-1, 1))
             self.LTL = self.L.T.dot(self.L)
 
+        # Initialize posterior model covariance matrix and resolution matrix
+        self.Cpost = None
+        self.ResM = None
 
     def clear_model(self, Hall_Pedersen_conductance = None):
         """ Reset data and model vectors
@@ -138,6 +141,8 @@ class Emodel(object):
             the previous conductance model is kept
         """
         self.m = None # clear electric field model parameters
+        self.Cpost = None
+        self.ResM = None
 
         # dictionary of lists to store datasets in
         self.data = {'efield':[], 'convection':[], 'ground_mag':[], 'space_mag_full':[], 'space_mag_fac':[], 'fac':[]}
@@ -178,7 +183,7 @@ class Emodel(object):
         Cpost          : bool, optional
                          Store posterior model covariance matrix as self.Cpost
         R              : bool, optional
-                         Store resolution matrix as self.R
+                         Store resolution matrix as self.ResM
         """
 
         # initialize G matrices
@@ -255,7 +260,7 @@ class Emodel(object):
             if Cpost:
                 self.Cpost = Cpost
 
-            self.R = Cpost.dot(GTG)
+            self.ResM = Cpost.dot(GTG)
 
         return 1
 
