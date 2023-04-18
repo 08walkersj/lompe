@@ -160,6 +160,7 @@ class Emodel(object):
                       # gtg = False,
                       Cpost = False,
                       R = False,
+                      taran = 0,
                       **kwargs):
         """ Calculate model vector
 
@@ -184,6 +185,8 @@ class Emodel(object):
                          Store posterior model covariance matrix as self.Cpost
         R              : bool, optional
                          Store resolution matrix as self.ResM
+        tarantola      : bool, optional
+                         Use previous timestep as prior model
         """
 
         # initialize G matrices
@@ -232,35 +235,37 @@ class Emodel(object):
 
                 self._G = np.vstack((self._G, G ))
                 self._d = np.hstack((self._d, np.hstack(ds.values) ))
-                self._w = np.hstack((self._w, spatial_weight**2/(ds.scale + error)**2 ))
+                #self._w = np.hstack((self._w, spatial_weight**2/(ds.scale + error)**2 ))
+                self._w = np.hstack((self._w, spatial_weight * 1/(ds.scale**2) * 1/(error**2) ))
 
         w = self._w.reshape((-1, 1)) # column vector
         GTG = (self._G * w).T.dot(self._G)
         GTd = (self._G * w).T.dot(self._d)
-
+        
         # regularization
-        if l1 > 0 or l2 > 0:
+        if not isinstance(taran, int):
+            GG = GTG + taran.Cpost_inv
+        elif l1 > 0 or l2 > 0:
             gtg_mag = np.median(np.diagonal(GTG))
             ltl_mag = np.median(self.LTL.diagonal())
             Cpri_inv = l1*gtg_mag * np.eye(GTG.shape[0]) + l2 * gtg_mag / ltl_mag * self.LTL
             GG = GTG + Cpri_inv
-            # LTL = l1*gtg_mag * np.eye(GTG.shape[0]) + l2 * gtg_mag / ltl_mag * self.LTL
-
         else:
             GG = GTG
-
+        
         if 'rcond' not in kwargs.keys():
             kwargs['rcond'] = None
-        self.m = np.linalg.lstsq(GG, GTd, **kwargs)[0]
-
-        if Cpost or R:
-
-            Cpost = np.linalg.lstsq(GG,np.eye(GTG.shape[0]),**kwargs)[0]
-
-            if Cpost:
-                self.Cpost = Cpost
-
-            self.ResM = Cpost.dot(GTG)
+        
+        if not isinstance(taran, int):
+            self.m = np.linalg.lstsq(GG, GTd + taran.Cpost_inv.dot(taran.m), **kwargs)[0]
+        else:
+            self.m = np.linalg.lstsq(GG, GTd, **kwargs)[0]
+        
+        if Cpost:
+            self.Cpost_inv = GG
+        
+        if R:
+            self.ResM = np.linalg.lstsq(GG,GTG,**kwargs)[0]
 
         return 1
 
