@@ -8,6 +8,7 @@ from ppigrf import igrf
 from lompe.utils.time import yearfrac_to_datetime
 from lompe.dipole import Dipole
 from .varcheck import check_input
+import scipy.linalg
 
 RE = 6371.2e3 # Earth radius in meters
 
@@ -161,6 +162,7 @@ class Emodel(object):
                       Cpost = False,
                       R = False,
                       taran = 0,
+                      m_init = 0,
                       **kwargs):
         """ Calculate model vector
 
@@ -236,36 +238,49 @@ class Emodel(object):
                 self._G = np.vstack((self._G, G ))
                 self._d = np.hstack((self._d, np.hstack(ds.values) ))
                 #self._w = np.hstack((self._w, spatial_weight**2/(ds.scale + error)**2 ))
-                self._w = np.hstack((self._w, spatial_weight * 1/(ds.scale**2) * 1/(error**2) ))
+                self._w = np.hstack((self._w, spatial_weight/(ds.scale + error)**2 ))
+                #self._w = np.hstack((self._w, spatial_weight * 1/(ds.scale**2) * 1/(error**2) ))
 
         w = self._w.reshape((-1, 1)) # column vector
         GTG = (self._G * w).T.dot(self._G)
         GTd = (self._G * w).T.dot(self._d)
         
+        
+        gtg_mag = np.median(np.diagonal(GTG))
+        ltl_mag = np.median(self.LTL.diagonal())
+        self.Cpri_inv = l1*gtg_mag * np.eye(GTG.shape[0]) + l2 * gtg_mag / ltl_mag * self.LTL
+        
         # regularization
         if not isinstance(taran, int):
             GG = GTG + taran.Cpost_inv
         elif l1 > 0 or l2 > 0:
-            gtg_mag = np.median(np.diagonal(GTG))
-            ltl_mag = np.median(self.LTL.diagonal())
-            Cpri_inv = l1*gtg_mag * np.eye(GTG.shape[0]) + l2 * gtg_mag / ltl_mag * self.LTL
-            GG = GTG + Cpri_inv
+            #gtg_mag = np.median(np.diagonal(GTG))
+            #ltl_mag = np.median(self.LTL.diagonal())
+            #Cpri_inv = l1*gtg_mag * np.eye(GTG.shape[0]) + l2 * gtg_mag / ltl_mag * self.LTL
+            GG = GTG + self.Cpri_inv
+            if not isinstance(m_init, int):
+                GTd += self.Cpri_inv.dot(m_init)
         else:
             GG = GTG
         
+        '''
         if 'rcond' not in kwargs.keys():
             kwargs['rcond'] = None
+        '''
         
         if not isinstance(taran, int):
-            self.m = np.linalg.lstsq(GG, GTd + taran.Cpost_inv.dot(taran.m), **kwargs)[0]
+            #self.m = np.linalg.lstsq(GG, GTd + taran.Cpost_inv.dot(taran.m), **kwargs)[0]
+            self.m = scipy.linalg.lstsq(GG, GTd + taran.Cpost_inv.dot(taran.m), lapack_driver='gelsy', **kwargs)[0]
         else:
-            self.m = np.linalg.lstsq(GG, GTd, **kwargs)[0]
+            #self.m = np.linalg.lstsq(GG, GTd, **kwargs)[0]
+            self.m = scipy.linalg.lstsq(GG, GTd, lapack_driver='gelsy', **kwargs)[0]
         
         if Cpost:
             self.Cpost_inv = GG
         
         if R:
-            self.ResM = np.linalg.lstsq(GG,GTG,**kwargs)[0]
+            #self.ResM = np.linalg.lstsq(GG,GTG,**kwargs)[0]
+            self.ResM = scipy.linalg.lstsq(GG,GTG, lapack_driver='gelsy', **kwargs)[0]
 
         return 1
 
@@ -470,7 +485,6 @@ class Emodel(object):
             return self.QiA.dot(c).dot(self.m)
         else:
             return HQiA.dot(c)
-
 
     @check_input
     def _B_cf_matrix(self, lon = None, lat = None, r = None, return_shape = False, return_poles = False):
